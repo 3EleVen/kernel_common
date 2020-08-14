@@ -354,11 +354,11 @@ static struct page *alloc_largest_available(unsigned long size,
 	return NULL;
 }
 
-static int system_heap_do_allocate(struct dma_heap *heap,
-				   unsigned long len,
-				   unsigned long fd_flags,
-				   unsigned long heap_flags,
-				   bool uncached)
+static struct dma_buf *system_heap_do_allocate(struct dma_heap *heap,
+					       unsigned long len,
+					       unsigned long fd_flags,
+					       unsigned long heap_flags,
+					       bool uncached)
 {
 	struct system_heap_buffer *buffer;
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
@@ -373,7 +373,7 @@ static int system_heap_do_allocate(struct dma_heap *heap,
 
 	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
 	if (!buffer)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	INIT_LIST_HEAD(&buffer->attachments);
 	mutex_init(&buffer->lock);
@@ -423,13 +423,6 @@ static int system_heap_do_allocate(struct dma_heap *heap,
 		goto free_pages;
 	}
 
-	ret = dma_buf_fd(dmabuf, fd_flags);
-	if (ret < 0) {
-		dma_buf_put(dmabuf);
-		/* just return, as put will call release and that will free */
-		return ret;
-	}
-
 	/*
 	 * For uncached buffers, we need to initially flush cpu cache, since
 	 * the __GFP_ZERO on the allocation means the zeroing was done by the
@@ -441,7 +434,7 @@ static int system_heap_do_allocate(struct dma_heap *heap,
 		dma_unmap_sgtable(dma_heap_get_dev(heap), table, DMA_BIDIRECTIONAL, 0);
 	}
 
-	return ret;
+	return dmabuf;
 
 free_pages:
 	for_each_sgtable_sg(table, sg, i) {
@@ -455,7 +448,7 @@ free_buffer:
 		__free_pages(page, compound_order(page));
 	kfree(buffer);
 
-	return ret;
+	return ERR_PTR(ret);
 }
 
 static struct dma_buf *system_heap_allocate(struct dma_heap *heap,
